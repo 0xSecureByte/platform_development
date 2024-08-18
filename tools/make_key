@@ -22,7 +22,7 @@ if [ "$#" -lt 2 -o "$#" -gt 3 ]; then
 Usage: $0 <name> <subject> [<keytype>]
 
 Creates <name>.pk8 key and <name>.x509.pem cert.  Cert contains the
-given <subject>. A keytype of "rsa" or "ec" is accepted.
+given <subject>. A keytype of "rsa", "rsa4096" or "ec" is accepted.
 EOF
   exit 2
 fi
@@ -46,13 +46,19 @@ mknod ${one} p
 mknod ${two} p
 chmod 0600 ${one} ${two}
 
-read -p "Enter password for '$1' (blank for none; password will be visible): " \
-  password
+read -p "Enter password for '$1' (blank for none; password will be visible): " password
 
+# Determine key type and set appropriate algorithm
 if [ "${3}" = "rsa" -o "$#" -eq 2 ]; then
+  keytype="RSA 2048-bit"
   ( openssl genrsa -f4 2048 | tee ${one} > ${two} ) &
   hash="-sha256"
+elif [ "${3}" = "rsa4096" ]; then
+  keytype="RSA 4096-bit"
+  ( openssl genrsa -f4 4096 | tee ${one} > ${two} ) &
+  hash="-sha256"
 elif [ "${3}" = "ec" ]; then
+  keytype="EC prime256v1"
   ( openssl ecparam -name prime256v1 -genkey -noout | tee ${one} > ${two} ) &
   hash="-sha256"
 else
@@ -60,17 +66,19 @@ else
   exit 1
 fi
 
+# Echo the algorithm being used
+echo "Using algorithm: $keytype with hash $hash"
+
 openssl req -new -x509 ${hash} -key ${two} -out $1.x509.pem \
   -days 10000 -subj "$2" &
 
 if [ "${password}" == "" ]; then
-  echo "creating ${1}.pk8 with no password"
+  echo "Creating ${1}.pk8 with no password"
   openssl pkcs8 -in ${one} -topk8 -outform DER -out $1.pk8 -nocrypt
 else
-  echo "creating ${1}.pk8 with password [${password}]"
+  echo "Creating ${1}.pk8 with password [${password}]"
   export password
-  openssl pkcs8 -in ${one} -topk8 -outform DER -out $1.pk8 \
-    -passout env:password
+  openssl pkcs8 -in ${one} -topk8 -outform DER -out $1.pk8 -passout env:password
   unset password
 fi
 
